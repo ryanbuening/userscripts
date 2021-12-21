@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         GitHub search on Google
-// @version      1.1
+// @version      1.2
 // @description  Adds a button to your Google searches to show only GitHub results
 // @author       Ryan Buening
-// @namespace    https://ryanbuening.com
+// @namespace    https://github.com/ryanbuening/userscripts
 // @include      http*://www.google.*/search*
 // @include      http*://google.*/search*
 // @run-at       document-end
