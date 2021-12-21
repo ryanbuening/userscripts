@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         StackOverflow search on Google
-// @version      1.2
+// @version      1.3
 // @description  Adds a button to search StackOverflow posts with Google
 // @author       Ryan Buening
 // @namespace    https://ryanbuening.com
@@ -32,7 +32,7 @@ if (typeof trustedTypes !== 'undefined') {
 	const link = document.createElement('a');
 
 	// add the icon
-	if (useIcon) {
+	if (addIcon) {
 		const span = document.createElement('span');
 		span.className = isImageSearch ? 'm3kSL' : 'bmaJhd iJddsb';
 		span.style.cssText = 'height:16px;width:16px';
