@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         StackOverflow search on Google
-// @version      1.4
+// @version      1.5
 // @description  Adds a button to search StackOverflow posts with Google
 // @author       Ryan Buening
-// @namespace    https://ryanbuening.com
+// @namespace    https://github.com/ryanbuening/userscripts
 // @include      http*://www.google.*/search*
 // @include      http*://google.*/search*
 // @run-at       document-end
