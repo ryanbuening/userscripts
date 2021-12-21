@@ -3,6 +3,7 @@
 // @version      1.2
 // @description  Adds a button to your Google searches to show only GitHub results
 // @author       Ryan Buening
+// @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
 // @include      http*://www.google.*/search*
 // @include      http*://google.*/search*
