@@ -3,6 +3,7 @@
 // @version      1.5
 // @description  Adds a button to search StackOverflow posts with Google
 // @author       Ryan Buening
+// @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
 // @include      http*://www.google.*/search*
 // @include      http*://google.*/search*
