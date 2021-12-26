@@ -5,8 +5,7 @@
 // @author       Ryan Buening
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
-// @include      http*://www.google.*/search*
-// @include      http*://google.*/search*
+// @include      *
 // @run-at       document-end
 // ==/UserScript==
 
