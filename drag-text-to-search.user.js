@@ -6,6 +6,7 @@
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
 // @run-at       document-start
+// @include      *
 // ==/UserScript==
 
 (function() {
