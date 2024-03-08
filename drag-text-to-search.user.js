@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Drag text to search
 // @version      1.0
-// @description  Drag text to search
+// @description  Highlight, drag, then release text to search in Google
 // @author       Ryan Buening
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
