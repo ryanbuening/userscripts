@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Reddit Subreddit Blocker
 // @namespace    https://github.com/ryanbuening/userscripts
-// @version      1.0
+// @version      1.1
 // @description  Blocks specific Reddit subreddits
 // @match        *://*.reddit.com/r/*
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
