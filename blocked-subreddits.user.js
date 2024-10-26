@@ -12,8 +12,10 @@
 
     // List of subreddits to block (in lowercase)
     const blockedSubreddits = [
+	    "politics",
         "moderatepolitics",
-        "politics"
+		"conservative",
+		"ohio"
     ];
 
     // Get the current subreddit from the URL
