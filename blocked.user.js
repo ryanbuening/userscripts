@@ -21,7 +21,7 @@
     blockedUrls.forEach(blockedUrl => {
         if (window.location.hostname.includes(blockedUrl)) {
             // Option 1: Redirect to a blocked page
-            window.location.href = "https://oneminutefocus.com/;
+            window.location.href = "https://oneminutefocus.com";
         }
     });
 })();
