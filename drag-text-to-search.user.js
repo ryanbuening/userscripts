@@ -5,6 +5,8 @@
 // @author       Ryan Buening
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
+// @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/drag-text-to-search.user.js
+// @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/drag-text-to-search.user.js
 // @run-at       document-start
 // @match        *://*/*
 // @match        *://localhost/*
