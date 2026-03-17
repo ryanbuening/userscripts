@@ -6,8 +6,8 @@
 // @author       Ryan Buening
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
-// @updateURL    https://raw.githubusercontent.com/USER/REPO/main/script.user.js
-// @downloadURL  https://raw.githubusercontent.com/USER/REPO/main/script.user.js
+// @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/reddit-old-redirect.user.js
+// @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/reddit-old-redirect.user.js
 // @match        https://*.reddit.com/*
 // @exclude      https://old.reddit.com/*
 // @exclude      https://*.reddit.com/poll/*
