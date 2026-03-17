@@ -5,8 +5,8 @@
 // @author       Ryan Buening
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
-// @updateURL    https://raw.githubusercontent.com/USER/REPO/main/script.user.js
-// @downloadURL  https://raw.githubusercontent.com/USER/REPO/main/script.user.js
+// @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/select-text-inside-link.user.js
+// @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/select-text-inside-link.user.js
 // @include      *
 // @grant        GM_addStyle
 // @run-at       document-start
