@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Drag text to search
-// @version      1.1
+// @version      1.2
 // @description  Highlight, drag, then release text to search in Google
 // @author       Ryan Buening
 // @license      MIT
 // @namespace    https://github.com/ryanbuening/userscripts
 // @run-at       document-start
-// @include      *
+// @match        *://*/*
+// @match        *://localhost/*
 // ==/UserScript==
 
 (function() {
