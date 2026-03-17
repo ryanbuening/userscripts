@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Old Reddit Night Mode
-// @version      1.0.0
+// @version      1.0.1
 // @description  Dark Mode for Old Reddit
 // @author       Ryan Buening
 // @license      MIT
@@ -13,6 +13,10 @@
 // ==/UserScript==
 
 (function () {
+  // Prevent FOUC — runs synchronously before any paint
+  document.documentElement.style.backgroundColor = '#202124';
+  document.documentElement.style.color = '#bdc1c6';
+  
   const css = `
     #header { margin-bottom: 20px; }
 
