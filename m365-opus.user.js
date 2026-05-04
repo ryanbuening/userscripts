@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         M365 Copilot - Auto Select Opus
-// @version      2.0
+// @version      3.1
 // @description  Automatically selects the Opus model in M365 Copilot
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-opus.user.js
@@ -13,10 +13,13 @@
     'use strict';
 
     const TARGET_MODEL = 'Opus';
-    const MENU_TIMEOUT_MS = 3000;
-    const DEBOUNCE_MS = 600;
+    const MENU_TIMEOUT_MS = 2000;
+    const DEBOUNCE_MS = 150;
+    const POLL_INTERVAL_MS = 30;
+    const COOLDOWN_MS = 1000;
 
     let selecting = false;
+    let cooldownUntil = 0;
     let debounceTimer = null;
 
     // --- Helpers ---
@@ -30,13 +33,14 @@
     }
 
     function isAlreadySelected() {
-        const btn = getModelButton();
-        return btn?.textContent.trim() === TARGET_MODEL;
+        return getModelButton()?.textContent.trim() === TARGET_MODEL;
     }
 
-    /** Polls for an element until found or timeout. */
-    function waitFor(finderFn, timeoutMs = MENU_TIMEOUT_MS, intervalMs = 100) {
+    function waitFor(finderFn, timeoutMs = MENU_TIMEOUT_MS, intervalMs = POLL_INTERVAL_MS) {
         return new Promise(resolve => {
+            const immediate = finderFn();
+            if (immediate) return resolve(immediate);
+
             const start = Date.now();
             const id = setInterval(() => {
                 const el = finderFn();
@@ -46,23 +50,33 @@
         });
     }
 
-    /** Finds the Opus option inside the open dropdown menu. */
     function findMenuOption() {
         const modelBtn = getModelButton();
-        // Prefer ARIA-role elements (menuitem, option, etc.)
-        const selectors = [
-            '[role="menuitem"]', '[role="option"]',
-            '[role="menuitemradio"]', '[role="radio"]',
-        ];
-        for (const sel of selectors) {
+        for (const sel of ['[role="menuitem"]', '[role="option"]', '[role="menuitemradio"]', '[role="radio"]']) {
             for (const el of document.querySelectorAll(sel)) {
                 if (el.textContent.trim().startsWith(TARGET_MODEL)) return el;
             }
         }
-        // Fallback: smallest matching button that isn't the model toggle itself
         return Array.from(document.querySelectorAll('button, [role="button"]'))
             .filter(el => el.textContent.trim().startsWith(TARGET_MODEL) && el !== modelBtn)
             .sort((a, b) => a.textContent.length - b.textContent.length)[0] ?? null;
+    }
+
+    function focusInputBox() {
+        for (const sel of [
+            '[data-placeholder="Message Copilot"]',
+            '[placeholder="Message Copilot"]',
+            '[contenteditable="true"]',
+            'textarea[placeholder*="Message"]',
+            'textarea',
+        ]) {
+            const el = document.querySelector(sel);
+            if (el) { el.focus(); return; }
+        }
+    }
+
+    function startObserving() {
+        observer.observe(document.body, { childList: true, subtree: true });
     }
 
     // --- Core ---
@@ -70,36 +84,37 @@
     async function selectModel() {
         if (selecting || isAlreadySelected()) return;
         selecting = true;
+        observer.disconnect();                  // pause — our own clicks won't re-trigger
         try {
             const btn = getModelButton();
             if (!btn || btn.textContent.trim() !== 'Auto') return;
 
-            btn.click(); // open the dropdown
+            btn.click();
 
             const option = await waitFor(findMenuOption);
             if (option) {
                 option.click();
+                cooldownUntil = Date.now() + COOLDOWN_MS;
                 console.log(`[userscript] Selected ${TARGET_MODEL}`);
+                setTimeout(focusInputBox, 50);
             } else {
-                // Close menu gracefully if option wasn't found
                 btn.click();
                 console.warn(`[userscript] "${TARGET_MODEL}" not found in menu`);
             }
         } finally {
             selecting = false;
+            setTimeout(startObserving, 100);    // resume after DOM settles
         }
     }
 
-    // --- Observer (handles SPA navigation & re-renders) ---
+    // --- Observer ---
 
     const observer = new MutationObserver(() => {
-        if (selecting || isAlreadySelected()) return;
+        if (selecting || Date.now() < cooldownUntil || isAlreadySelected()) return;
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(selectModel, DEBOUNCE_MS);
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
-
-    // Initial run
+    startObserving();
     selectModel();
 })();
