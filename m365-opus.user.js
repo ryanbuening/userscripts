@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         M365 Copilot - Auto Select Opus
-// @version      3.1
+// @version      4.0
 // @description  Automatically selects the Opus model in M365 Copilot
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-opus.user.js
@@ -16,13 +16,27 @@
     const MENU_TIMEOUT_MS = 2000;
     const DEBOUNCE_MS = 150;
     const POLL_INTERVAL_MS = 30;
-    const COOLDOWN_MS = 1000;
+
+    // Reduced cooldown to allow faster reactions to SPA reversions
+    const COOLDOWN_MS = 300;
 
     let selecting = false;
     let cooldownUntil = 0;
     let debounceTimer = null;
 
     // --- Helpers ---
+
+    function simulateClick(element) {
+        const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        for (const eventType of events) {
+            element.dispatchEvent(new MouseEvent(eventType, {
+                view: window,
+                bubbles: true,
+                cancelable: true,
+                buttons: 1
+            }));
+        }
+    }
 
     function getModelButton() {
         return Array.from(document.querySelectorAll('button'))
@@ -52,7 +66,9 @@
 
     function findMenuOption() {
         const modelBtn = getModelButton();
-        for (const sel of ['[role="menuitem"]', '[role="option"]', '[role="menuitemradio"]', '[role="radio"]']) {
+        const selectors = ['[role="menuitem"]', '[role="option"]', '[role="menuitemradio"]', '[role="radio"]'];
+
+        for (const sel of selectors) {
             for (const el of document.querySelectorAll(sel)) {
                 if (el.textContent.trim().startsWith(TARGET_MODEL)) return el;
             }
@@ -63,51 +79,70 @@
     }
 
     function focusInputBox() {
-        for (const sel of [
+        const selectors = [
             '[data-placeholder="Message Copilot"]',
             '[placeholder="Message Copilot"]',
             '[contenteditable="true"]',
             'textarea[placeholder*="Message"]',
             'textarea',
-        ]) {
+        ];
+        for (const sel of selectors) {
             const el = document.querySelector(sel);
             if (el) { el.focus(); return; }
         }
     }
 
-    function startObserving() {
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
-
-    // --- Core ---
+    // --- Core Action ---
 
     async function selectModel() {
-        if (selecting || isAlreadySelected()) return;
+        if (selecting || isAlreadySelected()) return false;
         selecting = true;
-        observer.disconnect();                  // pause — our own clicks won't re-trigger
+
         try {
             const btn = getModelButton();
-            if (!btn || btn.textContent.trim() !== 'Auto') return;
+            if (!btn || btn.textContent.trim() !== 'Auto') return false;
 
-            btn.click();
+            simulateClick(btn);
 
             const option = await waitFor(findMenuOption);
             if (option) {
-                option.click();
+                await new Promise(r => setTimeout(r, 50));
+                simulateClick(option);
                 cooldownUntil = Date.now() + COOLDOWN_MS;
                 console.log(`[userscript] Selected ${TARGET_MODEL}`);
-                setTimeout(focusInputBox, 50);
+                setTimeout(focusInputBox, 100);
+                return true;
             } else {
-                btn.click();
-                console.warn(`[userscript] "${TARGET_MODEL}" not found in menu`);
+                simulateClick(btn);
+                return false;
             }
         } finally {
             selecting = false;
-            setTimeout(startObserving, 100);    // resume after DOM settles
         }
     }
 
-    // --- Observer ---
+    // --- Boot Sequence & Observers ---
+
+    // Forces the selection until the SPA stops reverting it
+    async function enforceUntilSettled() {
+        let consecutiveSuccesses = 0;
+        const maxAttempts = 20; // Will monitor for up to ~10 seconds
+
+        for (let i = 0; i < maxAttempts; i++) {
+            if (isAlreadySelected()) {
+                consecutiveSuccesses++;
+                // If it holds Opus for 3 consecutive checks (~1.5 seconds), the SPA is settled
+                if (consecutiveSuccesses >= 3) break;
+            } else {
+                consecutiveSuccesses = 0;
+                await selectModel();
+            }
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        // Once settled, hand over to the standard observer for the rest of the session
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
 
     const observer = new MutationObserver(() => {
         if (selecting || Date.now() < cooldownUntil || isAlreadySelected()) return;
@@ -115,6 +150,6 @@
         debounceTimer = setTimeout(selectModel, DEBOUNCE_MS);
     });
 
-    startObserving();
-    selectModel();
+    // Start the boot sequence instead of a one-time execution
+    enforceUntilSettled();
 })();
