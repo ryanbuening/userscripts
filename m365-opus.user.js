@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         M365 Copilot - Auto Select Opus
-// @version      4.0
-// @description  Automatically selects the Opus model in M365 Copilot
+// @name         M365 Copilot - Auto Select Preferred Model
+// @version      4.1
+// @description  Automatically selects Opus (or Claude as fallback) in M365 Copilot
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-opus.user.js
 // @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-opus.user.js
@@ -12,19 +12,16 @@
 (function () {
     'use strict';
 
-    const TARGET_MODEL = 'Opus';
+    // Ordered by priority. The script will select the first available match.
+    const PREFERRED_MODELS = ['Opus', 'Claude'];
     const MENU_TIMEOUT_MS = 2000;
     const DEBOUNCE_MS = 150;
     const POLL_INTERVAL_MS = 30;
-
-    // Reduced cooldown to allow faster reactions to SPA reversions
     const COOLDOWN_MS = 300;
 
     let selecting = false;
     let cooldownUntil = 0;
     let debounceTimer = null;
-
-    // --- Helpers ---
 
     function simulateClick(element) {
         const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
@@ -42,12 +39,13 @@
         return Array.from(document.querySelectorAll('button'))
             .find(btn => {
                 const t = btn.textContent.trim();
-                return t === 'Auto' || t === TARGET_MODEL;
+                return t === 'Auto' || PREFERRED_MODELS.includes(t);
             });
     }
 
     function isAlreadySelected() {
-        return getModelButton()?.textContent.trim() === TARGET_MODEL;
+        const currentText = getModelButton()?.textContent.trim();
+        return PREFERRED_MODELS.includes(currentText);
     }
 
     function waitFor(finderFn, timeoutMs = MENU_TIMEOUT_MS, intervalMs = POLL_INTERVAL_MS) {
@@ -68,14 +66,26 @@
         const modelBtn = getModelButton();
         const selectors = ['[role="menuitem"]', '[role="option"]', '[role="menuitemradio"]', '[role="radio"]'];
 
+        let elements = [];
         for (const sel of selectors) {
-            for (const el of document.querySelectorAll(sel)) {
-                if (el.textContent.trim().startsWith(TARGET_MODEL)) return el;
+            elements.push(...document.querySelectorAll(sel));
+        }
+
+        // Fallback to standard buttons if strict roles aren't found
+        if (elements.length === 0) {
+            elements = Array.from(document.querySelectorAll('button, [role="button"]'))
+                .filter(el => el !== modelBtn);
+        }
+
+        // Iterate through preferences to enforce priority
+        for (const model of PREFERRED_MODELS) {
+            const match = elements.find(el => el.textContent.trim().startsWith(model));
+            if (match) {
+                return { element: match, modelName: model };
             }
         }
-        return Array.from(document.querySelectorAll('button, [role="button"]'))
-            .filter(el => el.textContent.trim().startsWith(TARGET_MODEL) && el !== modelBtn)
-            .sort((a, b) => a.textContent.length - b.textContent.length)[0] ?? null;
+
+        return null;
     }
 
     function focusInputBox() {
@@ -92,8 +102,6 @@
         }
     }
 
-    // --- Core Action ---
-
     async function selectModel() {
         if (selecting || isAlreadySelected()) return false;
         selecting = true;
@@ -104,16 +112,16 @@
 
             simulateClick(btn);
 
-            const option = await waitFor(findMenuOption);
-            if (option) {
+            const result = await waitFor(findMenuOption);
+            if (result) {
                 await new Promise(r => setTimeout(r, 50));
-                simulateClick(option);
+                simulateClick(result.element);
                 cooldownUntil = Date.now() + COOLDOWN_MS;
-                console.log(`[userscript] Selected ${TARGET_MODEL}`);
+                console.log(`[userscript] Selected ${result.modelName}`);
                 setTimeout(focusInputBox, 100);
                 return true;
             } else {
-                simulateClick(btn);
+                simulateClick(btn); // Close the menu if no models match
                 return false;
             }
         } finally {
@@ -121,17 +129,13 @@
         }
     }
 
-    // --- Boot Sequence & Observers ---
-
-    // Forces the selection until the SPA stops reverting it
     async function enforceUntilSettled() {
         let consecutiveSuccesses = 0;
-        const maxAttempts = 20; // Will monitor for up to ~10 seconds
+        const maxAttempts = 20;
 
         for (let i = 0; i < maxAttempts; i++) {
             if (isAlreadySelected()) {
                 consecutiveSuccesses++;
-                // If it holds Opus for 3 consecutive checks (~1.5 seconds), the SPA is settled
                 if (consecutiveSuccesses >= 3) break;
             } else {
                 consecutiveSuccesses = 0;
@@ -140,7 +144,6 @@
             await new Promise(r => setTimeout(r, 500));
         }
 
-        // Once settled, hand over to the standard observer for the rest of the session
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
@@ -150,6 +153,5 @@
         debounceTimer = setTimeout(selectModel, DEBOUNCE_MS);
     });
 
-    // Start the boot sequence instead of a one-time execution
     enforceUntilSettled();
 })();
