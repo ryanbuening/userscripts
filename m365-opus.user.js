@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         M365 Copilot - Auto Select Preferred Model
-// @version      4.1
-// @description  Automatically selects Opus (or Claude as fallback) in M365 Copilot
+// @version      4.3
+// @description  Automatically selects the highest-priority available Claude model in M365 Copilot
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-opus.user.js
 // @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-opus.user.js
@@ -13,7 +13,13 @@
     'use strict';
 
     // Ordered by priority. The script will select the first available match.
-    const PREFERRED_MODELS = ['Opus', 'Claude'];
+    // Most-specific names first so they win over the broader fallbacks.
+    const PREFERRED_MODELS = [
+        'Claude Opus 4.7',
+        'Claude Sonnet 4.6',
+        'Opus',
+        'Claude'
+    ];
     const MENU_TIMEOUT_MS = 2000;
     const DEBOUNCE_MS = 150;
     const POLL_INTERVAL_MS = 30;
@@ -22,6 +28,9 @@
     let selecting = false;
     let cooldownUntil = 0;
     let debounceTimer = null;
+    // Tracks the highest-priority model we've actually seen in the menu.
+    // Prevents looping when PREFERRED_MODELS[0] isn't available in the UI.
+    let bestAvailableModel = null;
 
     function simulateClick(element) {
         const events = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
@@ -35,17 +44,31 @@
         }
     }
 
+    function matchesPreferred(text) {
+        if (!text) return false;
+        return PREFERRED_MODELS.some(m => text.startsWith(m));
+    }
+
     function getModelButton() {
         return Array.from(document.querySelectorAll('button'))
             .find(btn => {
                 const t = btn.textContent.trim();
-                return t === 'Auto' || PREFERRED_MODELS.includes(t);
+                return t === 'Auto' || matchesPreferred(t);
             });
     }
 
-    function isAlreadySelected() {
-        const currentText = getModelButton()?.textContent.trim();
-        return PREFERRED_MODELS.includes(currentText);
+    function currentSelection() {
+        return getModelButton()?.textContent.trim() ?? '';
+    }
+
+    // "Settled" means: either we're on the top priority, OR we're on the
+    // best option we've previously confirmed is available in the menu.
+    function isSettled() {
+        const text = currentSelection();
+        if (!text || text === 'Auto') return false;
+        if (text.startsWith(PREFERRED_MODELS[0])) return true;
+        if (bestAvailableModel && text.startsWith(bestAvailableModel)) return true;
+        return false;
     }
 
     function waitFor(finderFn, timeoutMs = MENU_TIMEOUT_MS, intervalMs = POLL_INTERVAL_MS) {
@@ -103,27 +126,37 @@
     }
 
     async function selectModel() {
-        if (selecting || isAlreadySelected()) return false;
+        if (selecting || isSettled()) return false;
         selecting = true;
 
         try {
             const btn = getModelButton();
-            if (!btn || btn.textContent.trim() !== 'Auto') return false;
+            if (!btn) return false;
 
+            const before = btn.textContent.trim();
             simulateClick(btn);
 
             const result = await waitFor(findMenuOption);
-            if (result) {
-                await new Promise(r => setTimeout(r, 50));
-                simulateClick(result.element);
-                cooldownUntil = Date.now() + COOLDOWN_MS;
-                console.log(`[userscript] Selected ${result.modelName}`);
-                setTimeout(focusInputBox, 100);
-                return true;
-            } else {
+            if (!result) {
                 simulateClick(btn); // Close the menu if no models match
                 return false;
             }
+
+            // The best option in the menu is already what's selected — just
+            // remember it and close the menu without re-clicking.
+            if (before.startsWith(result.modelName)) {
+                bestAvailableModel = result.modelName;
+                simulateClick(btn);
+                return false;
+            }
+
+            await new Promise(r => setTimeout(r, 50));
+            simulateClick(result.element);
+            bestAvailableModel = result.modelName;
+            cooldownUntil = Date.now() + COOLDOWN_MS;
+            console.log(`[userscript] Selected ${result.modelName}`);
+            setTimeout(focusInputBox, 100);
+            return true;
         } finally {
             selecting = false;
         }
@@ -134,7 +167,7 @@
         const maxAttempts = 20;
 
         for (let i = 0; i < maxAttempts; i++) {
-            if (isAlreadySelected()) {
+            if (isSettled()) {
                 consecutiveSuccesses++;
                 if (consecutiveSuccesses >= 3) break;
             } else {
@@ -148,7 +181,7 @@
     }
 
     const observer = new MutationObserver(() => {
-        if (selecting || Date.now() < cooldownUntil || isAlreadySelected()) return;
+        if (selecting || Date.now() < cooldownUntil || isSettled()) return;
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(selectModel, DEBOUNCE_MS);
     });
