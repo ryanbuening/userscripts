@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Google UDM=14 Enforcer
-// @version      1.1
+// @version      1.2
 // @description  Defaults Google searches to the Web-only view (udm=14), but respects tab clicks like AI Mode, All, Images, etc.
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/google-udm14.user.js
@@ -13,21 +13,21 @@
 (function () {
     'use strict';
 
+    const STORAGE_KEY = 'udm14_lastQuery';
     const url = new URL(window.location.href);
+    const currentQuery = url.searchParams.get('q') || '';
+    const currentUdm = url.searchParams.get('udm');
+    const lastQuery = sessionStorage.getItem(STORAGE_KEY);
 
-    if (url.searchParams.get('udm') === '14') {
+    sessionStorage.setItem(STORAGE_KEY, currentQuery);
+
+    // Same query as the previous page load in this tab → user clicked a tab, respect their choice.
+    if (lastQuery !== null && lastQuery === currentQuery) {
         return;
     }
 
-    // If the user navigated here from another Google search results page,
-    // they clicked a tab (AI Mode, All, Images, etc.) — respect that choice.
-    if (document.referrer) {
-        try {
-            const ref = new URL(document.referrer);
-            if (ref.hostname === 'www.google.com' && ref.pathname === '/search') {
-                return;
-            }
-        } catch (_) { /* ignore malformed referrer */ }
+    if (currentUdm === '14') {
+        return;
     }
 
     url.searchParams.set('udm', '14');
