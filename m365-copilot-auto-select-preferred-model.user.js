@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         M365 Copilot - Auto Select Preferred Model
-// @version      5.3
+// @version      5.6
 // @description  Auto-selects the preferred Claude model in M365 Copilot, but not in Cowork (which remembers your last model) and yields to manual selection
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-copilot-auto-select-preferred-model.user.js
@@ -12,13 +12,26 @@
 (function () {
     'use strict';
 
-    const PREFERRED_MODELS = ['Claude Opus 4.8', 'Opus', 'Claude Sonnet 4.6'];
+    const DEBUG = true; // flip to false to silence
+    const TAG = '[auto-model]';
+    const dbg   = (...a) => DEBUG && console.log(TAG, ...a);
+    const dbgw  = (...a) => DEBUG && console.warn(TAG, ...a);
+    const dbge  = (...a) => DEBUG && console.error(TAG, ...a);
+    const group = (label, fn) => {
+        if (!DEBUG) return fn();
+        console.groupCollapsed(TAG, label);
+        try { return fn(); } finally { console.groupEnd(); }
+    };
+
+    const PREFERRED_PROVIDER = 'Claude';
+    const PREFERRED_MODELS = ['Opus 5'];
     const MENU_TIMEOUT_MS = 2000;
     const DEBOUNCE_MS = 150;
     const POLL_INTERVAL_MS = 30;
     const COOLDOWN_MS = 300;
     const MODEL_BUTTON_SELECTOR = '[data-telemetry-id="Header.ModelSelector"]';
     const COWORK_TAB_SELECTOR = '[role="tab"][value="cowork"]';
+    const NEW_CHAT_LABEL = 'New chat';
     const MENU_OPTION_SELECTOR = '[role="menuitem"],[role="option"],[role="menuitemradio"],[role="radio"]';
     const INPUT_SELECTOR =
         '[data-placeholder="Message Copilot"],[placeholder="Message Copilot"],' +
@@ -28,15 +41,32 @@
     let cooldownUntil = 0;
     let debounceTimer = null;
     let bestAvailableModel = null;
-    let userOverride = false; // set when the user manually picks a model → pause auto-select
+    let userOverride = false;
+    let observerTickCount = 0;
+    let selectModelInvocations = 0;
+
+    dbg('script loaded', {
+        version: '5.4-debug',
+        url: location.href,
+        preferred: PREFERRED_MODELS,
+        readyState: document.readyState,
+    });
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-    // Cowork persists the last-used model itself, so the script must not interfere.
-    const isCoworkActive = () =>
-        document.querySelector(COWORK_TAB_SELECTOR)?.getAttribute('aria-selected') === 'true';
+    const isCoworkActive = () => {
+        const tab = document.querySelector(COWORK_TAB_SELECTOR);
+        const active = tab?.getAttribute('aria-selected') === 'true';
+        dbg('isCoworkActive()', { tabFound: !!tab, active });
+        return active;
+    };
 
     function simulateClick(el) {
+        dbg('simulateClick()', {
+            tag: el?.tagName,
+            role: el?.getAttribute?.('role'),
+            text: el?.textContent?.trim().slice(0, 60),
+        });
         const hasPointer = typeof PointerEvent === 'function';
         for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
             const pointer = hasPointer && type.startsWith('pointer');
@@ -49,15 +79,28 @@
     }
 
     const matchesPreferred = (text) =>
-        !!text && PREFERRED_MODELS.some((m) => text.startsWith(m));
+        !!text && (
+            text.startsWith(PREFERRED_PROVIDER + ' ' + PREFERRED_MODELS[0]) ||
+            PREFERRED_MODELS.some((m) => text.startsWith(m))
+        );
 
     function getModelButton() {
         const byHook = document.querySelector(MODEL_BUTTON_SELECTOR);
-        if (byHook) return byHook;
+        if (byHook) {
+            dbg('getModelButton() → found via data-telemetry-id', {
+                text: byHook.textContent.trim(),
+                ariaExpanded: byHook.getAttribute('aria-expanded'),
+            });
+            return byHook;
+        }
         for (const btn of document.querySelectorAll('button')) {
             const t = btn.textContent.trim();
-            if (t === 'Auto' || matchesPreferred(t)) return btn;
+            if (t === 'Auto' || matchesPreferred(t)) {
+                dbgw('getModelButton() → fallback match on button text', { text: t });
+                return btn;
+            }
         }
+        dbgw('getModelButton() → NOT FOUND');
         return null;
     }
 
@@ -69,8 +112,7 @@
     function isSettled() {
         const text = currentSelection();
         if (!text || text === 'Auto') return false;
-        return text.startsWith(PREFERRED_MODELS[0]) ||
-            (!!bestAvailableModel && text.startsWith(bestAvailableModel));
+        return matchesPreferred(text);
     }
 
     function waitFor(finderFn, timeoutMs = MENU_TIMEOUT_MS, intervalMs = POLL_INTERVAL_MS) {
@@ -79,60 +121,74 @@
             if (immediate) return resolve(immediate);
             const start = Date.now();
             const id = setInterval(() => {
-                const el = finderFn();
-                if (el || Date.now() - start >= timeoutMs) {
+                const element = finderFn();
+                if (element || Date.now() - start >= timeoutMs) {
                     clearInterval(id);
-                    resolve(el ?? null);
+                    resolve(element ?? null);
                 }
             }, intervalMs);
         });
     }
 
-    function findMenuOption() {
+    function findMenuOption(label) {
         const modelBtn = getModelButton();
-        let elements = [...document.querySelectorAll(MENU_OPTION_SELECTOR)];
+        let elements = [...document.querySelectorAll(MENU_OPTION_SELECTOR)]
+            .filter((el) => el !== modelBtn);
         if (elements.length === 0) {
             elements = [...document.querySelectorAll('button, [role="button"]')]
                 .filter((el) => el !== modelBtn);
         }
-        for (const model of PREFERRED_MODELS) {
-            const match = elements.find((el) => el.textContent.trim().startsWith(model));
-            if (match) return { element: match, modelName: model };
-        }
-        return null;
+        return elements.find((el) => el.textContent.trim().startsWith(label)) ?? null;
     }
 
     function focusInputBox() {
         document.querySelector(INPUT_SELECTOR)?.focus();
     }
 
+    function isNewChatButton(element) {
+        if (!element) return false;
+        const text = element.textContent.trim();
+        const ariaLabel = element.getAttribute('aria-label')?.trim();
+        return text === NEW_CHAT_LABEL || ariaLabel === NEW_CHAT_LABEL;
+    }
+
+    function selectModelAfterNewChat() {
+        userOverride = false;
+        bestAvailableModel = null;
+        cooldownUntil = 0;
+        setTimeout(() => {
+            if (!isCoworkActive()) selectModel();
+        }, 300);
+    }
+
     async function selectModel() {
+        selectModelInvocations++;
+        dbg('selectModel()', { invocation: selectModelInvocations });
         if (selecting || userOverride || isCoworkActive() || isSettled()) return false;
         selecting = true;
         try {
             const btn = getModelButton();
             if (!btn) return false;
 
-            const before = btn.textContent.trim();
             simulateClick(btn);
 
-            const result = await waitFor(findMenuOption);
-            if (!result) {
-                simulateClick(btn); // close empty menu
-                return false;
-            }
-
-            if (before.startsWith(result.modelName)) {
-                bestAvailableModel = result.modelName;
+            const provider = await waitFor(() => findMenuOption(PREFERRED_PROVIDER));
+            if (!provider) {
                 simulateClick(btn);
                 return false;
             }
 
             await sleep(50);
-            simulateClick(result.element);
-            bestAvailableModel = result.modelName;
+            simulateClick(provider);
+
+            const model = await waitFor(() => findMenuOption(PREFERRED_MODELS[0]));
+            if (!model) return false;
+
+            await sleep(50);
+            simulateClick(model);
+            bestAvailableModel = PREFERRED_MODELS[0];
             cooldownUntil = Date.now() + COOLDOWN_MS;
-            console.log(`[userscript] Selected ${result.modelName}`);
+            console.log(`[userscript] Selected ${PREFERRED_PROVIDER} ${PREFERRED_MODELS[0]}`);
             setTimeout(focusInputBox, 100);
             return true;
         } finally {
@@ -144,28 +200,33 @@
         for (let i = 0, streak = 0; i < 20 && streak < 3; i++) {
             if (userOverride || isCoworkActive()) break;
             if (isSettled()) streak++;
-            else { streak = 0; await selectModel(); }
+            else {
+                streak = 0;
+                await selectModel();
+            }
             await sleep(500);
         }
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
-    // A *trusted* click on a model-menu option = the user choosing manually.
-    // The script's own clicks are isTrusted === false, so they're ignored here.
     document.addEventListener('click', (e) => {
         if (!e.isTrusted) return;
+        const clickedControl = e.target.closest?.('button,[role="button"],a');
+        if (isNewChatButton(clickedControl)) {
+            selectModelAfterNewChat();
+            return;
+        }
         const option = e.target.closest?.(MENU_OPTION_SELECTOR);
         if (option && menuIsOpen()) {
             userOverride = true;
             bestAvailableModel = null;
             console.log(
-                `[userscript] Manual override → "${option.textContent.trim()}". ` +
-                `Auto-select paused (press Alt+M to resume).`
+                `[userscript] Manual override -> "${option.textContent.trim()}". ` +
+                'Auto-select paused (press Alt+M to resume).'
             );
         }
     }, true);
 
-    // Alt+M re-enables auto-select and re-applies your default.
     document.addEventListener('keydown', (e) => {
         if (e.altKey && (e.key === 'm' || e.key === 'M')) {
             userOverride = false;
