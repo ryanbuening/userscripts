@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Gemini - Auto Select Extended Thinking
-// @version      1.1
+// @version      1.2
 // @description  Auto-selects Extended Thinking in Google Gemini dropdown and yields to manual selection
 // @namespace    https://github.com/ryanbuening/userscripts
+// @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/gemini-auto-select-extended-thinking.user.js
+// @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/gemini-auto-select-extended-thinking.user.js
 // @match        https://gemini.google.com/*
 // @grant        none
 // @run-at       document-idle
@@ -65,7 +67,7 @@
     let selectModelInvocations = 0;
 
     dbg('script loaded', {
-        version: '1.1',
+        version: '1.2',
         url: location.href,
         target: TARGET_OPTION,
         readyState: document.readyState,
@@ -127,27 +129,75 @@
         return !!document.querySelector('.cdk-overlay-pane .mat-mdc-menu-panel, [role="menu"]');
     };
 
+    // Finds the menu option matching `label`. Prefers the panel referenced by
+    // the trigger button's aria-controls id (works regardless of whether the
+    // menu is a stock mat-menu or a custom gemmenutrigger panel), falling
+    // back to the CDK overlay container and then the whole document.
+    // Matches on aria-label first (exact), then visible text (exact), then
+    // visible text (substring) - and logs every candidate it considered when
+    // nothing matches, so you can see exactly what's rendered and refine the
+    // matcher if Gemini's markup differs from what's assumed here.
     function findMenuOption(label) {
         const modelBtn = getModelButton();
-        // Look within CDK overlay container or the broader document
-        const root = document.querySelector('.cdk-overlay-container') || document;
-        let elements = [...root.querySelectorAll(MENU_OPTION_SELECTOR)].filter((el) => el !== modelBtn);
-        return elements.find((el) => el.textContent.trim().toLowerCase().includes(label.toLowerCase())) ?? null;
+        const menuId = modelBtn?.getAttribute('aria-controls');
+        const root =
+            (menuId && document.getElementById(menuId)) ||
+            document.querySelector('.cdk-overlay-container') ||
+            document;
+
+        const CANDIDATE_SELECTOR = [
+            MENU_OPTION_SELECTOR,
+            'button',
+            '[role^="menuitem"]',
+            '[tabindex]',
+        ].join(',');
+
+        const elements = [...root.querySelectorAll(CANDIDATE_SELECTOR)]
+            .filter((el) => el !== modelBtn && !modelBtn?.contains(el));
+
+        const target = label.trim().toLowerCase();
+
+        const match =
+            elements.find((el) => (el.getAttribute('aria-label') || '').trim().toLowerCase() === target) ??
+            elements.find((el) => (el.innerText || el.textContent || '').trim().toLowerCase() === target) ??
+            elements.find((el) => (el.innerText || el.textContent || '').toLowerCase().includes(target));
+
+        if (!match) {
+            dbgw(`findMenuOption: no match for "${label}" — candidates:`);
+            console.table(elements.map((el) => ({
+                tag: el.tagName,
+                role: el.getAttribute('role'),
+                ariaLabel: el.getAttribute('aria-label'),
+                ariaChecked: el.getAttribute('aria-checked'),
+                text: (el.innerText || el.textContent || '').trim().slice(0, 50),
+            })));
+        }
+        return match ?? null;
     }
 
+    // Only trusts an EXPLICITLY named checkmark icon (data-mat-icon-name /
+    // fonticon / textContent === "check" or "done") or an explicit
+    // aria-checked/aria-selected/selected-class signal. The previous version
+    // treated any visible <svg> descendant as a checkmark, which false-
+    // positives on every item's leading brand/mode icon and causes the
+    // script to believe the option is already selected without ever
+    // clicking it.
     function isOptionChecked(el) {
         if (!el) return false;
         if (el.getAttribute('aria-checked') === 'true' || el.getAttribute('aria-selected') === 'true') return true;
         if (el.classList.contains('selected') || el.classList.contains('active') || el.classList.contains('checked')) return true;
 
-        // Check for presence of active checkmark SVG or mat-icon
-        const checkIcon = el.querySelector('mat-icon, gem-icon, svg, [class*="check"], [class*="done"]');
-        if (checkIcon) {
-            const iconName = checkIcon.getAttribute('data-mat-icon-name') || checkIcon.getAttribute('fonticon') || checkIcon.textContent?.trim() || '';
-            if (iconName === 'check' || iconName === 'done' || iconName === '✓' || iconName === '✔') return true;
-            if (checkIcon.tagName.toLowerCase() === 'svg' && getComputedStyle(checkIcon).display !== 'none') return true;
+        const iconEls = el.querySelectorAll('mat-icon, gem-icon, [class*="check"], [class*="done"]');
+        for (const icon of iconEls) {
+            const name = (
+                icon.getAttribute('data-mat-icon-name') ||
+                icon.getAttribute('fonticon') ||
+                icon.textContent ||
+                ''
+            ).trim().toLowerCase();
+            if (name === 'check' || name === 'done' || name === '✓' || name === '✔') return true;
         }
-        return el.textContent.includes('✓') || el.textContent.includes('✔');
+        return false;
     }
 
     function isSettled() {
