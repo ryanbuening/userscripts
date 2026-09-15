@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         M365 Copilot - Auto Select Preferred Model
-// @version      5.6
+// @version      5.7
 // @description  Auto-selects the preferred Claude model in M365 Copilot, but not in Cowork (which remembers your last model) and yields to manual selection
 // @namespace    https://github.com/ryanbuening/userscripts
 // @updateURL    https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-copilot-auto-select-preferred-model.user.js
 // @downloadURL  https://github.com/ryanbuening/userscripts/raw/refs/heads/master/m365-copilot-auto-select-preferred-model.user.js
-// @match        https://m365.cloud.microsoft/*
+// @match        https://copilot.cloud.microsoft/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -24,7 +24,7 @@
     };
 
     const PREFERRED_PROVIDER = 'Claude';
-    const PREFERRED_MODELS = ['Opus 5'];
+    const PREFERRED_MODELS = ['Opus'];
     const MENU_TIMEOUT_MS = 2000;
     const DEBOUNCE_MS = 150;
     const POLL_INTERVAL_MS = 30;
